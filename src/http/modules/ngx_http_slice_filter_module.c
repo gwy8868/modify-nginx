@@ -42,6 +42,8 @@ static ngx_int_t ngx_http_slice_parse_content_range(ngx_http_request_t *r,
     ngx_http_slice_content_range_t *cr);
 static ngx_int_t ngx_http_slice_range_variable(ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t data);
+static ngx_int_t ngx_http_slice_cache_key_md5_variable(ngx_http_request_t *r,
+    ngx_http_variable_value_t *v, uintptr_t data); //add by guowenyan
 static off_t ngx_http_slice_get_start(ngx_http_request_t *r);
 static void *ngx_http_slice_create_loc_conf(ngx_conf_t *cf);
 static char *ngx_http_slice_merge_loc_conf(ngx_conf_t *cf, void *parent,
@@ -95,6 +97,7 @@ ngx_module_t  ngx_http_slice_filter_module = {
 
 
 static ngx_str_t  ngx_http_slice_range_name = ngx_string("slice_range");
+static ngx_str_t  ngx_http_slice_cache_key_md5_name = ngx_string("slice_cache_key_md5"); //add by guowenyan
 
 static ngx_http_output_header_filter_pt  ngx_http_next_header_filter;
 static ngx_http_output_body_filter_pt    ngx_http_next_body_filter;
@@ -396,6 +399,7 @@ ngx_http_slice_range_variable(ngx_http_request_t *r,
 {
     u_char                     *p;
     ngx_http_slice_ctx_t       *ctx;
+    ngx_http_slice_ctx_t       *main_ctx; // by guowenyan
     ngx_http_slice_loc_conf_t  *slcf;
 
     ctx = ngx_http_get_module_ctx(r, ngx_http_slice_filter_module);
@@ -441,6 +445,52 @@ ngx_http_slice_range_variable(ngx_http_request_t *r,
 
     return NGX_OK;
 }
+
+//[[[add by guowenyan
+static ngx_int_t ngx_http_slice_cache_key_md5_variable(ngx_http_request_t *r,
+    ngx_http_variable_value_t *v, uintptr_t data)
+{
+    ngx_http_cache_t  *c;
+    ngx_str_t          d;
+    u_char            *p;
+
+    c = r->cache;
+
+
+    if (c)
+    {
+        d.len = 2 * NGX_HTTP_CACHE_KEY_LEN;
+
+        d.data = ngx_pnalloc(r->pool, d.len + 1);
+        if (d.data == NULL)
+        {
+            return NGX_ERROR;
+        }
+
+        p = d.data;
+        p = ngx_hex_dump(p, c->key, NGX_HTTP_CACHE_KEY_LEN);
+        *p = '\0';
+    }
+    else
+    {
+        d.data = ngx_pnalloc(r->pool, 1);
+        if (d.data == NULL)
+        {
+            return NGX_ERROR;
+        }
+
+        d.len = ngx_sprintf(d.data, "%s", "-") - d.data;
+    }
+
+    v->data = d.data;
+    v->valid = 1;
+    v->not_found = 0;
+    v->no_cacheable = 1;
+    v->len = d.len;
+
+    return NGX_OK;
+}
+//]]]add by guowenyan
 
 static off_t
 ngx_http_slice_get_start(ngx_http_request_t *r)
@@ -530,6 +580,15 @@ ngx_http_slice_add_variables(ngx_conf_t *cf)
     }
 
     var->get_handler = ngx_http_slice_range_variable;
+
+    //[[[add by guowenyan
+    var = ngx_http_add_variable(cf, &ngx_http_slice_cache_key_md5_name, 0);
+    if (var == NULL) {
+        return NGX_ERROR;
+    }
+
+    var->get_handler = ngx_http_slice_cache_key_md5_variable;
+    //]]]add by guowenyan
 
     return NGX_OK;
 }
