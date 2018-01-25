@@ -20,7 +20,11 @@ typedef struct {
     off_t       end;
     ngx_str_t   range;
     ngx_str_t   etag;
-    ngx_uint_t  last;  /* unsigned  last:1; */
+    //[[[mod by guowenyan
+    unsigned             last:1;
+    unsigned             active:1;
+    ngx_http_request_t  *sr;
+    //]]]mod by guowenyan
 } ngx_http_slice_ctx_t;
 
 
@@ -133,7 +137,7 @@ ngx_http_slice_header_filter(ngx_http_request_t *r)
         {
             ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
                           "etag mismatch in slice response");
-            return NGX_ERROR;
+            return NGX_ERROR; //mod by guowenyan
         }
     }
 
@@ -169,6 +173,7 @@ ngx_http_slice_header_filter(ngx_http_request_t *r)
     }
 
     ctx->start = end;
+    ctx->active = 1; //add by guowenyan
 
     r->headers_out.status = NGX_HTTP_OK;
     r->headers_out.status_line.len = 0;
@@ -234,6 +239,18 @@ ngx_http_slice_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
         return rc;
     }
 
+    //[[[add by guowenyan
+    if (ctx->sr && !ctx->sr->done) {
+        return rc;
+    }
+
+    if (!ctx->active) {
+        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                      "missing slice response");
+        return NGX_ERROR;
+    }
+    //]]]add by guowenyan
+
     if (ctx->start >= ctx->end) {
         ngx_http_set_ctx(r, NULL, ngx_http_slice_filter_module);
         ngx_http_send_special(r, NGX_HTTP_LAST);
@@ -244,17 +261,23 @@ ngx_http_slice_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
         return rc;
     }
 
-    if (ngx_http_subrequest(r, &r->uri, &r->args, &sr, NULL, 0) != NGX_OK) {
+    //[[[mod by guowenyan
+    if (ngx_http_subrequest(r, &r->uri, &r->args, &ctx->sr, NULL,
+                            NGX_HTTP_SUBREQUEST_CLONE)
+        != NGX_OK)
+    //]]]mod by guowenyan
+    {
         return NGX_ERROR;
     }
 
-    ngx_http_set_ctx(sr, ctx, ngx_http_slice_filter_module);
+    ngx_http_set_ctx(ctx->sr, ctx, ngx_http_slice_filter_module); //mod by guowenyan
 
     slcf = ngx_http_get_module_loc_conf(r, ngx_http_slice_filter_module);
 
     ctx->range.len = ngx_sprintf(ctx->range.data, "bytes=%O-%O", ctx->start,
                                  ctx->start + (off_t) slcf->size - 1)
                      - ctx->range.data;
+    ctx->active = 0; //add by guowenyan
 
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                    "http slice subrequest: \"%V\"", &ctx->range);
@@ -418,7 +441,6 @@ ngx_http_slice_range_variable(ngx_http_request_t *r,
 
     return NGX_OK;
 }
-
 
 static off_t
 ngx_http_slice_get_start(ngx_http_request_t *r)

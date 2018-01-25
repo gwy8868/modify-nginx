@@ -2438,7 +2438,7 @@ ngx_http_subrequest(ngx_http_request_t *r,
     ngx_http_postponed_request_t  *pr, *p;
 
     if (r->subrequests == 0) {
-        ngx_http_probe_subrequest_cycle(r, uri, args);
+        // ngx_http_probe_subrequest_cycle(r, uri, args);
 
         ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
                       "subrequests cycle while processing \"%V\"", uri);
@@ -2565,8 +2565,20 @@ ngx_http_subrequest(ngx_http_request_t *r,
     r->main->count++;
 
     *psr = sr;
+    
+    if (flags & NGX_HTTP_SUBREQUEST_CLONE) {
+        sr->method = r->method;
+        sr->method_name = r->method_name;
+        sr->loc_conf = r->loc_conf;
+        sr->valid_location = r->valid_location;
+        sr->content_handler = r->content_handler;
+        sr->phase_handler = r->phase_handler;
+        sr->write_event_handler = ngx_http_core_run_phases;
 
-    ngx_http_probe_subrequest_start(sr);
+        ngx_http_update_location_config(sr);
+    }
+
+    // ngx_http_probe_subrequest_start(sr);
 
     return ngx_http_post_request(sr, NULL);
 }
