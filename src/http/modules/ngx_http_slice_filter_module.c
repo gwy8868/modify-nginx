@@ -406,6 +406,23 @@ ngx_http_slice_range_variable(ngx_http_request_t *r,
 
     if (ctx == NULL) {
         if (r != r->main || r->headers_out.status) {
+            //[[[add by guowenyan
+            if (r != r->main) {
+                main_ctx = ngx_http_get_module_ctx(r->main, ngx_http_slice_filter_module);
+                if (main_ctx) {
+                    ngx_http_set_ctx(r, main_ctx, ngx_http_slice_filter_module);
+
+                    v->data = main_ctx->range.data;
+                    v->valid = 1;
+                    v->not_found = 0;
+                    v->no_cacheable = 1;
+                    v->len = main_ctx->range.len;
+
+                    return NGX_OK;
+                }
+            }
+            //]]]add by guowenyan
+
             v->not_found = 1;
             return NGX_OK;
         }
